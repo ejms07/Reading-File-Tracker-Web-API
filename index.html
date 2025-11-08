@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ReadingFiles — Crew Reader</title>
+<style>
+  :root{
+    --bg:#0f1724; --card:#0b1220; --muted:#9aa6c1; --accent:#00d084;
+    --danger:#ef4444; --good:#16a34a; --soft:#111827; color-scheme: dark;
+  }
+  body{background:linear-gradient(180deg,#071023 0%, #071a2b 100%); font-family:Inter,system-ui,Segoe UI,Roboto,Arial; color:#e6eef8; margin:0; padding:24px;}
+  header{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+  header h1{margin:0;font-size:18px}
+  .bar{display:flex;gap:8px;align-items:center;margin-left:auto}
+  .btn{background:linear-gradient(180deg,#0f1724,#071225);border:1px solid #1f2a3a;padding:8px 12px;border-radius:8px;color:var(--muted);cursor:pointer}
+  .btn.primary{background:linear-gradient(180deg,#034c3f,#026a53); color:white; border:0}
+  .container{display:grid;grid-template-columns:350px 1fr; gap:20px}
+  .panel{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border:1px solid rgba(255,255,255,0.03); padding:14px; border-radius:10px;}
+  .list{display:flex;flex-direction:column;gap:8px; max-height:68vh; overflow:auto; padding-right:4px}
+  .file{display:flex;align-items:center;justify-content:space-between;padding:10px;border-radius:8px;background:rgba(0,0,0,0.08);cursor:pointer;border:1px solid rgba(255,255,255,0.02)}
+  .file.red{border-left:6px solid #bf1f2f}
+  .file.green{border-left:6px solid var(--good)}
+  .file .meta{display:flex;flex-direction:column;gap:4px}
+  footer{margin-top:18px;color:var(--muted);font-size:13px}
+  .small{font-size:13px;color:var(--muted)}
+  input[type="text"], input[type="password"]{width:100%;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit}
+  label{font-size:13px;color:var(--muted)}
+  .row{display:flex;gap:8px;align-items:center}
+  .crew-item{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;background:rgba(255,255,255,0.02);cursor:pointer}
+  .tag{padding:4px 8px;border-radius:999px;background:rgba(255,255,255,0.03);font-size:12px}
+  .danger{background:linear-gradient(180deg,#3e1d1d,#5a2222);color:#fff}
+  .note{background:#071827;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.02);font-size:13px}
+  .hidden{display:none}
+  nav a{color:var(--muted); text-decoration:none; margin-right:12px}
+  .flex{display:flex;gap:8px;align-items:center}
+  .topline{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .small-muted{color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>ReadingFiles — Crew Reader</h1>
+    <div class="small-muted">Pick your crew name, open files — files turn green automatically when read.</div>
+  </div>
+  <div class="bar">
+    <button id="chooseFolderBtn" class="btn">Choose ReadingFiles Folder</button>
+    <button id="adminBtn" class="btn">Admin</button>
+    <button id="refreshBtn" class="btn">Refresh</button>
+  </div>
+</header>
+
+<div class="container">
+  <!-- LEFT: Crew selection / navigation -->
+  <div class="panel">
+    <div class="topline">
+      <strong>Crew</strong>
+      <div class="flex">
+        <span id="currentCrewName" class="tag">Not selected</span>
+      </div>
+    </div>
+
+    <div id="crewList" class="list"></div>
+
+    <hr style="border:none;border-top:1px solid rgba(255,255,255,0.03);margin:12px 0">
+
+    <div>
+      <strong>Files in folder</strong>
+      <div class="small-muted" id="folderInfo">No folder selected</div>
+      <div id="fileStats" class="small" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: File list / viewers -->
+  <div class="panel">
+    <div class="topline">
+      <strong id="pageTitle">Crew Reader</strong>
+      <div>
+        <nav><a href="#" id="linkCrew">Crew page</a><a href="#" id="linkAdmin">Admin page</a></nav>
+      </div>
+    </div>
+
+    <div id="mainCrewView">
+      <div class="note" id="instructions">
+        <strong>How it works</strong>
+        <ul>
+          <li>Click <em>Choose ReadingFiles Folder</em> and select the folder that contains files to read.</li>
+          <li>Pick your crew name on the left. When you open a file it will automatically turn <span style="color:var(--good)">green</span> for you with a timestamp.</li>
+          <li>Admins can add/remove crew and add/remove files (if your browser supports folder writes).</li>
+        </ul>
+      </div>
+
+      <div style="margin-top:12px">
+        <div id="filesList" class="list"></div>
+      </div>
+    </div>
+
+    <!-- Admin page -->
+    <div id="adminView" class="hidden">
+      <h3>Admin Console</h3>
+      <div id="adminLocked" class="note">
+        <div class="small">Admin area is password-protected.</div>
+        <div style="margin-top:8px">
+          <label>Admin password</label>
+          <input id="adminPasswordInput" type="password" placeholder="Enter admin password">
+          <div style="margin-top:8px"><button id="adminUnlockBtn" class="btn primary">Unlock Admin</button></div>
+          <div id="adminSetupHint" class="small-muted" style="margin-top:8px"></div>
+        </div>
+      </div>
+
+      <div id="adminUnlocked" class="hidden">
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+          <div style="flex:1">
+            <label>Add Crew Member</label>
+            <div style="display:flex;gap:8px;margin-top:6px">
+              <input id="newCrewName" type="text" placeholder="Crew name">
+              <button id="addCrewBtn" class="btn primary">Add</button>
+            </div>
+          </div>
+          <div>
+            <button id="adminLockBtn" class="btn">Lock Admin</button>
+          </div>
+        </div>
+
+        <div style="margin-bottom:12px">
+          <strong>Crew list</strong>
+          <div id="adminCrewList" class="list" style="margin-top:8px"></div>
+        </div>
+
+        <div>
+          <strong>Files (in folder)</strong>
+          <div class="small-muted">Admins can add files (upload) or remove existing files.</div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <input id="fileUpload" type="file" />
+            <button id="uploadFileBtn" class="btn primary">Upload to Folder</button>
+            <button id="deleteSelectedFileBtn" class="btn danger">Delete Selected File</button>
+          </div>
+          <div id="adminFilesList" class="list" style="margin-top:8px"></div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <div id="support" class="small-muted">Designed to run locally. For best results use Microsoft Edge or Chrome (File System Access API).</div>
+    </footer>
+  </div>
+</div>
+
+<script>
+/*
+  ReadingFiles — Crew Reader single-file app
+  * Uses File System Access API when available (preferred) for persistent folder reads/writes.
+  * Stores statuses and admin info in .reading_status.json inside the selected folder.
+  * Fallback uses localStorage if File System Access API not available.
+  * No third-party libs.
+*/
+
+'use strict';
+
+/* ---------- Utilities ---------- */
+const $ = id => document.getElementById(id);
+const fmt = dt => dt ? (new Date(dt)).toISOString().replace('T',' ').split('.')[0] : '';
+
+/* ---------- App State ---------- */
+let state = {
+  dirHandle: null,          // Directory handle (if FS API)
+  supportsFS: ('showDirectoryPicker' in window),
+  chosenFolderName: null,
+  statusObj: null,          // reading status + crew + admin stored structure
+  currentCrew: null,
+  files: [],                // {name, handle|null, blob?}
+  pendingSelectedFile: null // for admin deletion selection
+};
+
+/* Default shape of status storage */
+const defaultStatus = () => ({
+  admin: { passwordHash: null }, // if null -> first admin unlock will prompt to create password
+  crew: [],                      // array of crew names (strings)
+  files: {}                      // per-file read map: files[filename] = { crewName: ISOtimestamp, ... }
+});
+
+/* ------------ storage layer -------------
+   Two modes:
+   - Preferred: File System Access API -> write/read .reading_status.json inside folder.
+   - Fallback: localStorage key 'readingfiles_status_v1' (not portable).
+-----------------------------------------*/
+
+async function loadStatusFromFolder() {
+  if (state.supportsFS && state.dirHandle) {
+    try {
+      // Try to get existing .reading_status.json
+      const name = '.reading_status.json';
+      let fileHandle;
+      try {
+        fileHandle = await state.dirHandle.getFileHandle(name, { create: false });
+        const file = await fileHandle.getFile();
+        const txt = await file.text();
+        state.statusObj = JSON.parse(txt);
+      } catch (err) {
+        // Not found -> create default
+        state.statusObj = defaultStatus();
+        await writeStatusToFolder(); // create file
+      }
+      return;
+    } catch (e) {
+      console.error('Error reading status from folder', e);
+      alert('Error reading/writing status file in folder. Falling back to local storage.');
+      localFallbackLoad();
+      return;
+    }
+  } else {
+    localFallbackLoad();
+  }
+}
+
+function localFallbackLoad(){
+  const raw = localStorage.getItem('readingfiles_status_v1');
+  if(raw){
+    try{
+      state.statusObj = JSON.parse(raw);
+    }catch{
+      state.statusObj = defaultStatus();
+      localStorage.setItem('readingfiles_status_v1', JSON.stringify(state.statusObj));
+    }
+  } else {
+    state.statusObj = defaultStatus();
+    localStorage.setItem('readingfiles_status_v1', JSON.stringify(state.statusObj));
+  }
+}
+
+async function writeStatusToFolder() {
+  if (state.supportsFS && state.dirHandle) {
+    try {
+      const name = '.reading_status.json';
+      const fh = await state.dirHandle.getFileHandle(name, { create: true });
+      const writable = await fh.createWritable();
+      await writable.write(JSON.stringify(state.statusObj, null, 2));
+      await writable.close();
+      return true;
+    } catch (e) {
+      console.error('Write status error', e);
+      alert('Unable to write status file into folder. Your browser may not allow writes to the selected folder.');
+      return false;
+    }
+  } else {
+    localStorage.setItem('readingfiles_status_v1', JSON.stringify(state.statusObj));
+    return true;
+  }
+}
+
+/* ---------- Crypto for password hashing ---------- */
+async function hashPassword(str){
+  const enc = new TextEncoder();
+  const data = enc.encode(str);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  const arr = Array.from(new Uint8Array(hash));
+  return arr.map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+/* ---------- Folder / file scanning ---------- */
+async function chooseFolder(){
+  try{
+    if(!state.supportsFS){
+      // Fallback: ask user to pick files via input instead (we will process them but can't write into folder)
+      alert('Your browser does not support the File System Access API. You can still select files via file picker, but admin write features and persistent folder writing are limited.');
+      // For fallback, instruct user to use file input via the "fileUpload" input (or reload after picking).
+      return;
+    }
+    const dir = await window.showDirectoryPicker();
+    state.dirHandle = dir;
+    state.chosenFolderName = dir.name;
+    await loadStatusFromFolder();
+    await refreshFileList();
+    renderAll();
+    // store dir handle in IndexedDB via origin-private storage for persistence (optional)
+    try {
+      // store handle for later (will throw if permission not granted)
+      // reuse the origin's storage automatically by saving to global variable; browsers may allow using getDirectoryHandle again.
+      // We'll save a reference in window.localStorage via serializable name - browsers will not store handles directly; advanced persistence may be added.
+      // We attempt to store using the "name" in sessionStorage for re-prompt convenience (can't store handle itself reliably).
+      localStorage.setItem('readingfiles_folder_name', dir.name);
+      // For better persistence we could use the File System Access persistent handles pattern via IndexedDB, but that's more involved.
+    } catch (e) { /* ignore */ }
+  }catch(err){
+    console.error(err);
+    alert('Folder selection canceled or failed.');
+  }
+}
+
+async function refreshFileList(){
+  state.files = [];
+  if(state.supportsFS && state.dirHandle){
+    for await (const [name, handle] of state.dirHandle.entries()){
+      if(handle.kind === 'file' && name !== '.reading_status.json') {
+        state.files.push({ name, handle });
+      }
+    }
+    // sort alphabetically
+    state.files.sort((a,b)=>a.name.localeCompare(b.name, undefined, {sensitivity:'base'}));
+    // ensure status.files has entries for all files and remove stale entries
+    const sfiles = state.statusObj.files || {};
+    const present = new Set(state.files.map(f=>f.name));
+    // add missing
+    for(const f of state.files){
+      if(!sfiles[f.name]) sfiles[f.name] = {};
+    }
+    // remove stale
+    for(const fname of Object.keys(sfiles)){
+      if(!present.has(fname)) delete sfiles[fname];
+    }
+    state.statusObj.files = sfiles;
+    await writeStatusToFolder();
+  } else {
+    // Fallback: no directory handle. We cannot scan directory automatically.
+    // Let files be whatever is already in statusObj.files keys.
+    state.files = Object.keys(state.statusObj.files || {}).map(name => ({name, handle:null}));
+    state.files.sort((a,b)=>a.name.localeCompare(b.name, undefined, {sensitivity:'base'}));
+  }
+}
+
+/* ---------- UI rendering ---------- */
+
+function renderCrewList(){
+  const el = $('crewList');
+  el.innerHTML = '';
+  const arr = state.statusObj?.crew || [];
+  if(arr.length === 0){
+    el.innerHTML = '<div class="small-muted">No crew members. Admins can add crew.</div>';
+    $('currentCrewName').textContent = 'Not selected';
+    return;
+  }
+  arr.forEach(name => {
+    const div = document.createElement('div');
+    div.className = 'crew-item';
+    div.textContent = name;
+    div.onclick = () => {
+      state.currentCrew = name;
+      $('currentCrewName').textContent = name;
+      renderFilesList();
+      renderAdminCrewList();
+    };
+    if(state.currentCrew === name){
+      div.style.outline = '2px solid rgba(0, 208, 132, 0.14)';
+    }
+    el.appendChild(div);
+  });
+}
+
+function renderFilesList(){
+  const el = $('filesList');
+  el.innerHTML = '';
+  if(!state.files.length){
+    el.innerHTML = '<div class="small-muted">No files in folder yet.</div>';
+    $('fileStats').textContent = '';
+    return;
+  }
+  let total = 0, fullyRead = 0;
+  for(const f of state.files){
+    total++;
+    const container = document.createElement('div');
+    container.className = 'file';
+    const statusForFile = (state.statusObj.files && state.statusObj.files[f.name]) || {};
+    // Determine color: green for current crew if read, otherwise red
+    const crew = state.currentCrew;
+    const readTime = crew ? statusForFile[crew] : null;
+    if(crew && readTime){
+      container.classList.add('green');
+    } else {
+      container.classList.add('red');
+    }
+
+    // Check if all crew have read
+    const crewList = state.statusObj.crew || [];
+    let allRead = crewList.length > 0 && crewList.every(c => statusForFile[c]);
+    if(allRead) container.classList.add('green');
+
+    // build UI
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const title = document.createElement('div');
+    title.textContent = f.name;
+    title.style.fontWeight = 600;
+    const subt = document.createElement('div');
+    subt.className = 'small-muted';
+    let subtitleText = '';
+    if(crew){
+      subtitleText = readTime ? `You read: ${fmt(readTime)}` : 'Unread by you';
+    } else {
+      subtitleText = 'Select your crew name to track reading';
+    }
+    // Also show count of readers / all readers if any
+    const readers = Object.keys(statusForFile || {}).length;
+    subtitleText += ` — ${readers} reader${readers===1?'':'s'}`;
+    subt.textContent = subtitleText;
+
+    meta.appendChild(title);
+    meta.appendChild(subt);
+
+    container.appendChild(meta);
+
+    // right side controls - for admin we will allow select/delete
+    const right = document.createElement('div');
+    right.style.display = 'flex';
+    right.style.alignItems = 'center';
+    right.style.gap = '8px';
+
+    const openBtn = document.createElement('button');
+    openBtn.className = 'btn';
+    openBtn.textContent = 'Open';
+    openBtn.onclick = async (ev) => {
+      ev.stopPropagation();
+      if(state.supportsFS && f.handle){
+        // read file as blob and open in new tab as blob URL
+        const file = await f.handle.getFile();
+        const blob = file;
+        openBlobInNewTab(blob, f.name);
+      } else if(!state.supportsFS && f.handle === null) {
+        // fallback: can't read file via handle, but we may have the file as Blob saved previously - not likely
+        alert('Cannot open file directly in this browser. Use Chromium-based browser for full support.');
+        return;
+      }
+      // mark read for current crew automatically (no mark toggle)
+      if(state.currentCrew){
+        const now = new Date().toISOString();
+        state.statusObj.files[f.name] = state.statusObj.files[f.name] || {};
+        state.statusObj.files[f.name][state.currentCrew] = now;
+        await writeStatusToFolder();
+        renderFilesList();
+      } else {
+        alert('Select your crew name on the left before opening files so the app can mark them read for you.');
+      }
+    };
+
+    right.appendChild(openBtn);
+
+    container.appendChild(right);
+
+    // clicking container opens file too
+    container.onclick = openBtn.onclick;
+
+    el.appendChild(container);
+    if(allRead) fullyRead++;
+  }
+
+  $('fileStats').textContent = `Files: ${total} — Fully read by all crew: ${fullyRead}`;
+}
+
+function renderAdminCrewList(){
+  const el = $('adminCrewList');
+  el.innerHTML = '';
+  const arr = state.statusObj?.crew || [];
+  if(arr.length===0){ el.innerHTML = '<div class="small-muted">No crew</div>'; return; }
+  arr.forEach(name => {
+    const row = document.createElement('div');
+    row.className = 'file';
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const title = document.createElement('div'); title.textContent = name; title.style.fontWeight = 600;
+    meta.appendChild(title);
+    row.appendChild(meta);
+    const del = document.createElement('button');
+    del.className = 'btn danger';
+    del.textContent = 'Remove';
+    del.onclick = async (e) => {
+      e.stopPropagation();
+      if(!confirm(`Remove crew member "${name}"? This will delete read timestamps for them.`)) return;
+      state.statusObj.crew = state.statusObj.crew.filter(x=>x!==name);
+      // remove their timestamps from all files
+      for(const fname of Object.keys(state.statusObj.files||{})){
+        delete state.statusObj.files[fname][name];
+      }
+      await writeStatusToFolder();
+      renderCrewList();
+      renderAdminCrewList();
+      renderFilesList();
+    };
+    row.appendChild(del);
+    el.appendChild(row);
+  });
+}
+
+function renderAdminFilesList(){
+  const el = $('adminFilesList');
+  el.innerHTML = '';
+  if(!state.files.length){
+    el.innerHTML = '<div class="small-muted">No files</div>';
+    return;
+  }
+  for(const f of state.files){
+    const row = document.createElement('div');
+    row.className = 'file';
+    const meta = document.createElement('div'); meta.className='meta';
+    const title = document.createElement('div'); title.textContent = f.name; title.style.fontWeight=600;
+    const sub = document.createElement('div'); sub.className='small-muted';
+    const readers = Object.keys((state.statusObj.files[f.name]||{})).length;
+    sub.textContent = `${readers} reader${readers===1?'':'s'}`;
+    meta.appendChild(title); meta.appendChild(sub);
+    row.appendChild(meta);
+
+    const right = document.createElement('div'); right.style.display='flex'; right.style.gap='8px';
+    const selectBtn = document.createElement('button'); selectBtn.className='btn'; selectBtn.textContent='Select';
+    selectBtn.onclick = (e)=>{ e.stopPropagation(); state.pendingSelectedFile = f.name; alert(`Selected file "${f.name}" for administrative actions.`); };
+    const delBtn = document.createElement('button'); delBtn.className='btn danger'; delBtn.textContent='Delete';
+    delBtn.onclick = async (e) => {
+      e.stopPropagation();
+      if(!confirm(`Delete file "${f.name}" from the folder? This action removes it for everyone.`)) return;
+      // perform delete if we have write access
+      if(state.supportsFS && state.dirHandle){
+        try {
+          await state.dirHandle.removeEntry(f.name);
+        } catch (err) {
+          console.error(err);
+          alert('Failed to delete file: ' + (err.message || err));
+          return;
+        }
+        // remove file from status map
+        delete state.statusObj.files[f.name];
+        await writeStatusToFolder();
+        await refreshFileList();
+        renderAdminFilesList();
+        renderFilesList();
+        alert('File deleted.');
+      } else {
+        alert('Browser does not allow direct deletion inside folders. Use a browser with File System Access API (Edge/Chrome).');
+      }
+    };
+    right.appendChild(selectBtn); right.appendChild(delBtn);
+    row.appendChild(right);
+    el.appendChild(row);
+  }
+}
+
+/* ---------- blob open helper ---------- */
+function openBlobInNewTab(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, '_blank');
+  // optional: set a download attribute
+  // revoke after some time
+  setTimeout(()=>URL.revokeObjectURL(url), 60_000);
+}
+
+/* ---------- Admin auth UI ---------- */
+async function adminUnlock(){
+  // if no password set, ask to create and store
+  const val = $('adminPasswordInput').value || '';
+  if(!val){
+    alert('Enter admin password (not empty).');
+    return;
+  }
+  if(!state.statusObj) {
+    alert('No folder selected. Choose ReadingFiles folder first.');
+    return;
+  }
+  if(!state.statusObj.admin?.passwordHash){
+    // set new password
+    if(!confirm('No admin password set. Create this password as the admin password?')) return;
+    const h = await hashPassword(val);
+    state.statusObj.admin = { passwordHash: h };
+    await writeStatusToFolder();
+    $('adminSetupHint').textContent = 'Admin password created.';
+    unlockAdminUI();
+    return;
+  } else {
+    const h = await hashPassword(val);
+    if(h === state.statusObj.admin.passwordHash){
+      unlockAdminUI();
+    } else {
+      alert('Incorrect password.');
+    }
+  }
+}
+
+function unlockAdminUI(){
+  $('adminLocked').classList.add('hidden');
+  $('adminUnlocked').classList.remove('hidden');
+  $('adminPasswordInput').value = '';
+  $('adminSetupHint').textContent = '';
+  renderAdminCrewList();
+  renderAdminFilesList();
+}
+
+function lockAdminUI(){
+  $('adminLocked').classList.remove('hidden');
+  $('adminUnlocked').classList.add('hidden');
+  state.pendingSelectedFile = null;
+}
+
+/* ---------- Admin actions ---------- */
+async function addCrew(){
+  const name = $('newCrewName').value.trim();
+  if(!name){ alert('Enter a crew name'); return; }
+  if(!state.statusObj.crew.includes(name)){
+    state.statusObj.crew.push(name);
+    // ensure status map has entries for existing files
+    for(const fname of Object.keys(state.statusObj.files||{})){
+      // nothing to do: absence means unread
+    }
+    await writeStatusToFolder();
+    $('newCrewName').value='';
+    renderCrewList();
+    renderAdminCrewList();
+    renderFilesList();
+  } else {
+    alert('Crew name already exists');
+  }
+}
+
+async function uploadFileToFolder(){
+  const input = $('fileUpload');
+  if(!input.files.length) { alert('Choose a file to upload'); return; }
+  if(!(state.supportsFS && state.dirHandle)){
+    alert('Folder writing is not supported in this browser. Use Edge or Chrome to enable upload into the selected ReadingFiles folder.');
+    return;
+  }
+  const file = input.files[0];
+  try {
+    const fh = await state.dirHandle.getFileHandle(file.name, { create: true });
+    const writable = await fh.createWritable();
+    await writable.write(file);
+    await writable.close();
+    // ensure status entry
+    state.statusObj.files[file.name] = state.statusObj.files[file.name] || {};
+    await writeStatusToFolder();
+    await refreshFileList();
+    renderAdminFilesList();
+    renderFilesList();
+    alert('Uploaded file to folder.');
+  } catch (err) {
+    console.error(err);
+    alert('Upload failed: ' + (err.message || err));
+  }
+}
+
+/* ---------- Startup & event wiring ---------- */
+
+async function renderAll(){
+  $('folderInfo').textContent = state.chosenFolderName ? `Folder: ${state.chosenFolderName}` : 'No folder selected';
+  renderCrewList();
+  renderFilesList();
+  renderAdminCrewList();
+  renderAdminFilesList();
+  // admin UI initial visibility based on whether password exists
+  if(state.statusObj && state.statusObj.admin && state.statusObj.admin.passwordHash){
+    $('adminSetupHint').textContent = 'Admin password present. Click Unlock Admin to sign in.';
+  } else {
+    $('adminSetupHint').textContent = 'No admin password set. First unlock will prompt to create one.';
+  }
+}
+
+/* ---------- Event listeners ---------- */
+
+$('chooseFolderBtn').addEventListener('click', async ()=> {
+  await chooseFolder();
+});
+
+$('refreshBtn').addEventListener('click', async ()=> {
+  if(!state.dirHandle && !state.supportsFS) { alert('No folder selected. Use Choose ReadingFiles Folder or use fallback via file upload.'); return; }
+  await loadStatusFromFolder();
+  await refreshFileList();
+  renderAll();
+});
+
+$('adminBtn').addEventListener('click', ()=> {
+  $('mainCrewView').classList.add('hidden');
+  $('adminView').classList.remove('hidden');
+  $('pageTitle').textContent = 'Admin';
+});
+
+$('linkCrew').addEventListener('click', (e)=>{ e.preventDefault(); $('mainCrewView').classList.remove('hidden'); $('adminView').classList.add('hidden'); $('pageTitle').textContent='Crew Reader'; });
+$('linkAdmin').addEventListener('click', (e)=>{ e.preventDefault(); $('mainCrewView').classList.add('hidden'); $('adminView').classList.remove('hidden'); $('pageTitle').textContent='Admin'; });
+
+$('adminUnlockBtn').addEventListener('click', adminUnlock);
+$('adminLockBtn').addEventListener('click', lockAdminUI);
+$('addCrewBtn').addEventListener('click', addCrew);
+$('uploadFileBtn').addEventListener('click', uploadFileToFolder);
+$('deleteSelectedFileBtn').addEventListener('click', async ()=> {
+  if(!state.pendingSelectedFile) { alert('No file selected. Use Select next to the file in Admin Files.'); return; }
+  if(!confirm(`Delete file "${state.pendingSelectedFile}"?`)) return;
+  if(state.supportsFS && state.dirHandle){
+    try {
+      await state.dirHandle.removeEntry(state.pendingSelectedFile);
+      delete state.statusObj.files[state.pendingSelectedFile];
+      state.pendingSelectedFile = null;
+      await writeStatusToFolder();
+      await refreshFileList();
+      renderAdminFilesList();
+      renderFilesList();
+      alert('File deleted.');
+    } catch (err) {
+      console.error(err);
+      alert('Delete failed: ' + (err.message || err));
+    }
+  } else {
+    alert('Folder writes not supported in this browser.');
+  }
+});
+
+/* ---------- On load: Attempt to restore previously chosen folder if possible ---------- */
+(async function init(){
+  // initial status object
+  state.statusObj = defaultStatus();
+  // try to detect stored permission via saved state in localStorage (best-effort)
+  const savedName = localStorage.getItem('readingfiles_folder_name');
+  if(state.supportsFS && savedName){
+    // Can't reopen a handle without storing the handle itself in IndexedDB; we can't reliably do that now.
+    // So we prompt user to reselect folder to restore full functionality.
+    $('folderInfo').textContent = `Previously used folder: ${savedName} (re-select to restore).`;
+  } else {
+    $('folderInfo').textContent = 'No folder selected';
+  }
+  renderAll();
+})();
+</script>
+</body>
+</html>
